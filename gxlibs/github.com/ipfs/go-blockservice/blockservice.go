@@ -15,6 +15,7 @@ import (
 	exchange "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-exchange-interface"
 	logging "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-log"
 	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-verifcid"
+	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
 )
 
 var log = logging.Logger("blockservice")
@@ -136,6 +137,10 @@ func (s *blockService) AddBlock(o blocks.Block) error {
 	if err != nil {
 		return err
 	}
+	if c.Prefix().MhType == mh.ID {
+		log.Event(context.TODO(), "BlockService.BlockAdded", c)
+		return nil
+	}
 	if s.checkFirst {
 		if has, err := s.blockstore.Has(c); has || err != nil {
 			return err
@@ -167,6 +172,9 @@ func (s *blockService) AddBlocks(bs []blocks.Block) error {
 	if s.checkFirst {
 		toput = make([]blocks.Block, 0, len(bs))
 		for _, b := range bs {
+			if b.Cid().Prefix().MhType == mh.ID {
+				continue
+			}
 			has, err := s.blockstore.Has(b.Cid())
 			if err != nil {
 				return err
@@ -214,6 +222,14 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, fget fun
 	err := verifcid.ValidateCid(c) // hash security
 	if err != nil {
 		return nil, err
+	}
+
+	if c.Prefix().MhType == mh.ID {
+		hash, err := mh.Decode(c.Hash())
+		if err != nil {
+			return nil, err
+		}
+		return blocks.NewBlockWithCid(hash.Digest, c)
 	}
 
 	block, err := bs.Get(c)
@@ -273,6 +289,22 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, fget
 
 		var misses []cid.Cid
 		for _, c := range ks {
+			if c.Prefix().MhType == mh.ID {
+				hash, err := mh.Decode(c.Hash())
+				if err != nil {
+					continue
+				}
+				b, err := blocks.NewBlockWithCid(hash.Digest, c)
+				if err != nil {
+					continue
+				}
+				select {
+				case out <- b:
+				case <-ctx.Done():
+					return
+				}
+				continue
+			}
 			hit, err := bs.Get(c)
 			if err != nil {
 				misses = append(misses, c)
@@ -310,6 +342,10 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, fget
 
 // DeleteBlock deletes a block in the blockservice from the datastore
 func (s *blockService) DeleteBlock(c cid.Cid) error {
+	if c.Prefix().MhType == mh.ID {
+		log.Event(context.TODO(), "BlockService.BlockDeleted", c)
+		return nil
+	}
 	err := s.blockstore.DeleteBlock(c)
 	if err == nil {
 		log.Event(context.TODO(), "BlockService.BlockDeleted", c)
