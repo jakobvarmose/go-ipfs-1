@@ -9,9 +9,9 @@ import (
 	ocmd "github.com/ipsn/go-ipfs/core/commands/object"
 	unixfs "github.com/ipsn/go-ipfs/core/commands/unixfs"
 
+	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmdkit"
 	cmds "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmds"
 	logging "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-log"
-	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmdkit"
 )
 
 var log = logging.Logger("core/commands")
@@ -24,6 +24,7 @@ const (
 	LocalOption   = "local" // DEPRECATED: use OfflineOption
 	OfflineOption = "offline"
 	ApiOption     = "api"
+	AuthOption    = "auth"
 )
 
 var Root = &cmds.Command{
@@ -97,6 +98,7 @@ The CLI will exit with one of the following values:
 		cmdkit.BoolOption(LocalOption, "L", "Run the command locally, instead of using the daemon. DEPRECATED: use --offline."),
 		cmdkit.BoolOption(OfflineOption, "Run the command offline."),
 		cmdkit.StringOption(ApiOption, "Use a specific API instance (defaults to /ip4/127.0.0.1/tcp/5001)"),
+		cmdkit.StringOption(AuthOption, "Authentication token."),
 
 		// global options, added to every command
 		cmdenv.OptionCidBase,

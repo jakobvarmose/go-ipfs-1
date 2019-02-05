@@ -18,6 +18,7 @@ import (
 	cmds "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmds"
 	cmdsHttp "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmds/http"
 	config "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
+	path "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-path"
 )
 
 var (
@@ -144,13 +145,13 @@ func commandsOption(cctx oldcmds.Context, command *cmds.Command) ServeOption {
 // CommandsOption constructs a ServerOption for hooking the commands into the
 // HTTP server.
 func CommandsOption(cctx oldcmds.Context) ServeOption {
-	return commandsOption(cctx, corecommands.Root)
+	return commandsOption(cctx, NewAuthCommand(corecommands.Root))
 }
 
 // CommandsROOption constructs a ServerOption for hooking the read-only commands
 // into the HTTP server.
 func CommandsROOption(cctx oldcmds.Context) ServeOption {
-	return commandsOption(cctx, corecommands.RootRO)
+	return commandsOption(cctx, NewAuthCommand(corecommands.RootRO))
 }
 
 // CheckVersionOption returns a ServeOption that checks whether the client ipfs version matches. Does nothing when the user agent string does not contain `/go-ipfs/`
