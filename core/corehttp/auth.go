@@ -17,24 +17,26 @@ func NewAuthCommand(cmd *cmds.Command) *cmds.Command {
 		res.Subcommands[k] = NewAuthCommand(v)
 	}
 
-	res.Run = func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
-		cfg, err := cmdenv.GetConfig(env)
-		if err != nil {
-			return err
-		}
-
-		if cfg.API.Auth != "" {
-			auth, err := getAuth(req)
+	if cmd.Run != nil {
+		res.Run = func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
+			cfg, err := cmdenv.GetConfig(env)
 			if err != nil {
 				return err
 			}
 
-			if subtle.ConstantTimeCompare([]byte(auth), []byte(cfg.API.Auth)) != 1 {
-				return errors.New("invalid authentication token")
-			}
-		}
+			if cfg.API.Auth != "" {
+				auth, err := getAuth(req)
+				if err != nil {
+					return err
+				}
 
-		return cmd.Run(req, res, env)
+				if subtle.ConstantTimeCompare([]byte(auth), []byte(cfg.API.Auth)) != 1 {
+					return errors.New("invalid authentication token")
+				}
+			}
+
+			return cmd.Run(req, res, env)
+		}
 	}
 
 	return &res
