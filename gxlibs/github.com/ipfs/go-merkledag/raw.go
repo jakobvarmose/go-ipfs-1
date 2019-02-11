@@ -2,6 +2,7 @@ package merkledag
 
 import (
 	"fmt"
+
 	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-block-format"
 
 	cid "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-cid"
@@ -92,6 +93,16 @@ func (rn *RawNode) Stat() (*ipld.NodeStat, error) {
 		CumulativeSize: len(rn.RawData()),
 		DataSize:       len(rn.RawData()),
 	}, nil
+}
+
+func (rn *RawNode) Public() (blocks.Block, error) {
+	b, ok := rn.Block.(interface {
+		Public() (blocks.Block, error)
+	})
+	if !ok {
+		return rn, nil
+	}
+	return b.Public()
 }
 
 var _ ipld.Node = (*RawNode)(nil)

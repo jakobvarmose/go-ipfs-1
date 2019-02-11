@@ -84,7 +84,7 @@ func (n *ProtoNode) getPBNode() *pb.PBNode {
 func (n *ProtoNode) EncodeProtobuf(force bool) ([]byte, error) {
 	sort.Stable(LinkSlice(n.links)) // keep links sorted
 	if n.encoded == nil || force {
-		n.cached = cid.Undef
+		n.cached = nil
 		var err error
 		n.encoded, err = n.Marshal()
 		if err != nil {
@@ -92,13 +92,18 @@ func (n *ProtoNode) EncodeProtobuf(force bool) ([]byte, error) {
 		}
 	}
 
-	if !n.cached.Defined() {
+	if n.cached == nil {
 		c, err := n.CidBuilder().Sum(n.encoded)
 		if err != nil {
 			return nil, err
 		}
 
-		n.cached = c
+		b, err := blocks.NewBlockWithCid(n.encoded, c)
+		if err != nil {
+			return nil, err
+		}
+
+		n.cached = b
 	}
 
 	return n.encoded, nil
@@ -130,7 +135,7 @@ func DecodeProtobufBlock(b blocks.Block) (ipld.Node, error) {
 		return nil, fmt.Errorf("failed to decode Protocol Buffers: %v", err)
 	}
 
-	decnd.cached = c
+	decnd.cached = b
 	decnd.SetCidBuilder(c.Prefix())
 	return decnd, nil
 }

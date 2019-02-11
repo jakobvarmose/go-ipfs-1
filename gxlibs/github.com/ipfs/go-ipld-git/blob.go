@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	blocks "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-block-format"
 	cid "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-cid"
 	node "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipld-format"
 )
@@ -66,6 +67,22 @@ func (b *Blob) Tree(p string, depth int) []string {
 
 func (b *Blob) GitSha() []byte {
 	return cidToSha(b.Cid())
+}
+
+func (b *Blob) Public() (blocks.Block, error) {
+	return b, nil
+}
+
+func (t *Tree) Public() (blocks.Block, error) {
+	return t, nil
+}
+
+func (t *Tag) Public() (blocks.Block, error) {
+	return t, nil
+}
+
+func (c *Commit) Public() (blocks.Block, error) {
+	return c, nil
 }
 
 var _ node.Node = (*Blob)(nil)

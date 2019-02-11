@@ -24,6 +24,7 @@ type UnixfsAddSettings struct {
 	InlineLimit  int
 	RawLeaves    bool
 	RawLeavesSet bool
+	Crypto       uint64
 
 	Chunker string
 	Layout  Layout
@@ -58,6 +59,7 @@ func UnixfsAddOptions(opts ...UnixfsAddOption) (*UnixfsAddSettings, cid.Prefix, 
 		InlineLimit:  32,
 		RawLeaves:    false,
 		RawLeavesSet: false,
+		Crypto:       0,
 
 		Chunker: "size-262144",
 		Layout:  BalancedLayout,
@@ -124,6 +126,11 @@ func UnixfsAddOptions(opts ...UnixfsAddOption) (*UnixfsAddSettings, cid.Prefix, 
 	prefix.MhType = options.MhType
 	prefix.MhLength = -1
 
+	if options.Crypto != 0 {
+		prefix.Version = 4
+		prefix.EncryptionAlgorithm = options.Crypto
+	}
+
 	return options, prefix, nil
 }
 
@@ -171,6 +178,13 @@ func (unixfsOpts) RawLeaves(enable bool) UnixfsAddOption {
 	return func(settings *UnixfsAddSettings) error {
 		settings.RawLeaves = enable
 		settings.RawLeavesSet = true
+		return nil
+	}
+}
+
+func (unixfsOpts) Crypto(crypto uint64) UnixfsAddOption {
+	return func(settings *UnixfsAddSettings) error {
+		settings.Crypto = crypto
 		return nil
 	}
 }

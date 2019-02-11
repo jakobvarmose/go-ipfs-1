@@ -10,10 +10,11 @@ import (
 	"github.com/ipsn/go-ipfs/core/commands/cmdenv"
 	coreiface "github.com/ipsn/go-ipfs/core/coreapi/interface"
 	"github.com/ipsn/go-ipfs/core/coreapi/interface/options"
+	"github.com/ipsn/go-ipfs/multisymmetric"
 
-	cmds "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmds"
 	pb "github.com/cheggaaa/pb"
 	cmdkit "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmdkit"
+	cmds "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmds"
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
 )
 
@@ -130,6 +131,7 @@ You can now check what blocks have been created by:
 		cmdkit.StringOption(hashOptionName, "Hash function to use. Implies CIDv1 if not sha2-256. (experimental)").WithDefault("sha2-256"),
 		cmdkit.BoolOption(inlineOptionName, "Inline small blocks into CIDs. (experimental)"),
 		cmdkit.IntOption(inlineLimitOptionName, "Maximum block size to inline. (experimental)").WithDefault(32),
+		cmdkit.StringOption(cryptoOptionName, "encryption algorithm").WithDefault("none"),
 	},
 	PreRun: func(req *cmds.Request, env cmds.Environment) error {
 		quiet, _ := req.Options[quietOptionName].(bool)
@@ -172,10 +174,16 @@ You can now check what blocks have been created by:
 		inline, _ := req.Options[inlineOptionName].(bool)
 		inlineLimit, _ := req.Options[inlineLimitOptionName].(int)
 		pathName, _ := req.Options[stdinPathName].(string)
+		cryptoStr, _ := req.Options[cryptoOptionName].(string)
 
 		hashFunCode, ok := mh.Names[strings.ToLower(hashFunStr)]
 		if !ok {
 			return fmt.Errorf("unrecognized hash function: %s", strings.ToLower(hashFunStr))
+		}
+
+		cryptoCode, ok := multisymmetric.Names[cryptoStr]
+		if !ok {
+			return fmt.Errorf("unrecognized encryption algorithm: %s", cryptoStr)
 		}
 
 		enc, err := cmdenv.GetCidEncoder(req)
@@ -190,6 +198,7 @@ You can now check what blocks have been created by:
 
 			options.Unixfs.Inline(inline),
 			options.Unixfs.InlineLimit(inlineLimit),
+			options.Unixfs.Crypto(cryptoCode),
 
 			options.Unixfs.Chunker(chunker),
 

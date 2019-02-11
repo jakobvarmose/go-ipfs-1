@@ -2,6 +2,7 @@ package cid
 
 import (
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
+	"github.com/ipsn/go-ipfs/multisymmetric"
 )
 
 type Builder interface {
@@ -69,6 +70,39 @@ func (p V1Builder) GetCodec() uint64 {
 }
 
 func (p V1Builder) WithCodec(c uint64) Builder {
+	p.Codec = c
+	return p
+}
+
+type V4Builder struct {
+	Codec               uint64
+	MhType              uint64
+	MhLength            int // MhLength <= 0 means the default length
+	EncryptionAlgorithm uint64
+}
+
+func (p V4Builder) Sum(data []byte) (Cid, error) {
+	key, err := multisymmetric.GenerateKey(p.EncryptionAlgorithm)
+	if err != nil {
+		return Undef, err
+	}
+	ct, err := multisymmetric.Encrypt(p.EncryptionAlgorithm, key, data)
+	if err != nil {
+		return Undef, err
+	}
+	hash, err := mh.Sum(ct, p.MhType, p.MhLength)
+	if err != nil {
+		return Undef, err
+	}
+	c := NewCidV1(Raw, hash)
+	return NewPrivateCid(p.Codec, p.EncryptionAlgorithm, key, c), nil
+}
+
+func (p V4Builder) GetCodec() uint64 {
+	return p.Codec
+}
+
+func (p V4Builder) WithCodec(c uint64) Builder {
 	p.Codec = c
 	return p
 }

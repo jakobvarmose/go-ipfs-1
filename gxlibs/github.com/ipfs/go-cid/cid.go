@@ -29,6 +29,7 @@ import (
 
 	mbase "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multibase"
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
+	"github.com/ipsn/go-ipfs/multisymmetric"
 )
 
 // UnsupportedVersionString just holds an error message
@@ -57,7 +58,8 @@ var (
 // the codes described in the authoritative document:
 // https://github.com/multiformats/multicodec/blob/master/table.csv
 const (
-	Raw = 0x55
+	Raw       = 0x55
+	Encrypted = 0x57
 
 	DagProtobuf = 0x70
 	DagCBOR     = 0x71
@@ -87,6 +89,7 @@ const (
 var Codecs = map[string]uint64{
 	"v0":                   DagProtobuf,
 	"raw":                  Raw,
+	"encrypted":            Encrypted,
 	"protobuf":             DagProtobuf,
 	"cbor":                 DagCBOR,
 	"git-raw":              GitRaw,
@@ -112,6 +115,7 @@ var Codecs = map[string]uint64{
 // CodecToStr maps the numeric codec to its name
 var CodecToStr = map[uint64]string{
 	Raw:                "raw",
+	Encrypted:          "encrypted",
 	DagProtobuf:        "protobuf",
 	DagCBOR:            "cbor",
 	GitRaw:             "git-raw",
@@ -165,6 +169,29 @@ func NewCidV1(codecType uint64, mhash mh.Multihash) Cid {
 	}
 
 	return Cid{string(buf[:n+hashlen])}
+}
+
+// NewPrivateCid returns a new private Cid using the given
+// content type, algorithm, key and cid.
+func NewPrivateCid(codecType, encAlg uint64, encKey []byte, cid Cid) Cid {
+	keylen := len(encKey)
+	cidlen := len(cid.str)
+	// four 8 bytes (max) numbers plus key plus cid
+	buf := make([]byte, 4*binary.MaxVarintLen64+keylen+cidlen)
+	n := binary.PutUvarint(buf, 4)
+	n += binary.PutUvarint(buf[n:], codecType)
+	n += binary.PutUvarint(buf[n:], encAlg)
+	n += binary.PutUvarint(buf[n:], uint64(keylen))
+	cn := copy(buf[n:], encKey)
+	if cn != keylen {
+		panic("copy key length is inconsistent")
+	}
+	cn = copy(buf[n+keylen:], cid.str)
+	if cn != cidlen {
+		panic("copy key length is inconsistent")
+	}
+
+	return Cid{string(buf[:n+keylen+cidlen])}
 }
 
 // Cid represents a self-describing content adressed
@@ -296,8 +323,37 @@ func Cast(data []byte) (Cid, error) {
 		return Undef, err
 	}
 
-	if vers != 1 {
-		return Undef, fmt.Errorf("expected 1 as the cid version number, got: %d", vers)
+	if vers != 1 && vers != 4 {
+		return Undef, fmt.Errorf("expected 1 or 4 as the cid version number, got: %d", vers)
+	}
+
+	if vers == 4 {
+		_, n1 := binary.Uvarint(data[n:])
+		if err := uvError(n1); err != nil {
+			return Undef, err
+		}
+
+		_, n2 := binary.Uvarint(data[n+n1:])
+		if err := uvError(n2); err != nil {
+			return Undef, err
+		}
+
+		keylen, n3 := binary.Uvarint(data[n+n1+n2:])
+		if err := uvError(n3); err != nil {
+			return Undef, err
+		}
+
+		if n+n1+n2+n3+int(keylen) > len(data) {
+			return Undef, errors.New("keylen too long")
+		}
+
+		rest := data[n+n1+n2+n3+int(keylen):]
+		c, err := Cast(rest)
+		if err != nil {
+			return Undef, err
+		}
+
+		return Cid{string(data[0 : n+n1+n2+n3+int(keylen)+len(c.str)])}, nil
 	}
 
 	_, cn := binary.Uvarint(data[n:])
@@ -319,7 +375,9 @@ func (c Cid) Version() uint64 {
 	if len(c.str) == 34 && c.str[0] == 18 && c.str[1] == 32 {
 		return 0
 	}
-	return 1
+
+	vers, _ := uvarint(c.str)
+	return vers
 }
 
 // Type returns the multicodec-packed content type of a Cid.
@@ -332,6 +390,62 @@ func (c Cid) Type() uint64 {
 	return codec
 }
 
+func (c Cid) EncryptionAlgorithm() uint64 {
+	if c.Version() != 4 {
+		return 0
+	}
+
+	// skip version length
+	_, n1 := uvarint(c.str)
+	// skip codec length
+	_, n2 := uvarint(c.str[n1:])
+	// read algorithm
+	alg, _ := uvarint(c.str[n1+n2:])
+	return alg
+}
+
+func (c Cid) EncryptionKey() []byte {
+	if c.Version() != 4 {
+		return nil
+	}
+
+	// skip version length
+	_, n1 := uvarint(c.str)
+	// skip codec length
+	_, n2 := uvarint(c.str[n1:])
+	// skip algorithm length
+	_, n3 := uvarint(c.str[n1+n2:])
+	// read key
+	keylen, n4 := uvarint(c.str[n1+n2+n3:])
+	if n1+n2+n3+n4+int(keylen) > len(c.str) {
+		return nil
+	}
+
+	return []byte(c.str[n1+n2+n3+n4 : n1+n2+n3+n4+int(keylen)])
+}
+
+// Public returns a public Cid corresponding to the given Cid.
+// If the given Cid is already a public Cid, this is a no-op.
+func (c Cid) Public() Cid {
+	if c.Version() != 4 {
+		return c
+	}
+
+	// skip version length
+	_, n1 := uvarint(c.str)
+	// skip codec length
+	_, n2 := uvarint(c.str[n1:])
+	// skip algorithm length
+	_, n3 := uvarint(c.str[n1+n2:])
+	// skip key
+	keylen, n4 := uvarint(c.str[n1+n2+n3:])
+	if n1+n2+n3+n4+int(keylen) > len(c.str) {
+		return Undef
+	}
+
+	return Cid{c.str[n1+n2+n3+n4+int(keylen):]}
+}
+
 // String returns the default string representation of a
 // Cid. Currently, Base58 is used as the encoding for the
 // multibase string.
@@ -339,7 +453,7 @@ func (c Cid) String() string {
 	switch c.Version() {
 	case 0:
 		return c.Hash().B58String()
-	case 1:
+	case 1, 4:
 		mbstr, err := mbase.Encode(mbase.Base58BTC, c.Bytes())
 		if err != nil {
 			panic("should not error with hardcoded mbase: " + err.Error())
@@ -360,7 +474,7 @@ func (c Cid) StringOfBase(base mbase.Encoding) (string, error) {
 			return "", ErrInvalidEncoding
 		}
 		return c.Hash().B58String(), nil
-	case 1:
+	case 1, 4:
 		return mbase.Encode(base, c.Bytes())
 	default:
 		panic("not possible to reach this point")
@@ -374,7 +488,7 @@ func (c Cid) Encode(base mbase.Encoder) string {
 	switch c.Version() {
 	case 0:
 		return c.Hash().B58String()
-	case 1:
+	case 1, 4:
 		return base.Encode(c.Bytes())
 	default:
 		panic("not possible to reach this point")
@@ -384,6 +498,10 @@ func (c Cid) Encode(base mbase.Encoder) string {
 // Hash returns the multihash contained by a Cid.
 func (c Cid) Hash() mh.Multihash {
 	bytes := c.Bytes()
+
+	if c.Version() == 4 {
+		return c.Public().Hash()
+	}
 
 	if c.Version() == 0 {
 		return mh.Multihash(bytes)
@@ -473,10 +591,11 @@ func (c Cid) Loggable() map[string]interface{} {
 func (c Cid) Prefix() Prefix {
 	dec, _ := mh.Decode(c.Hash()) // assuming we got a valid multiaddr, this will not error
 	return Prefix{
-		MhType:   dec.Code,
-		MhLength: dec.Length,
-		Version:  c.Version(),
-		Codec:    c.Type(),
+		MhType:              dec.Code,
+		MhLength:            dec.Length,
+		Version:             c.Version(),
+		Codec:               c.Type(),
+		EncryptionAlgorithm: c.EncryptionAlgorithm(),
 	}
 }
 
@@ -487,15 +606,33 @@ func (c Cid) Prefix() Prefix {
 // NOTE: The use -1 in MhLength to mean default length is deprecated,
 //   use the V0Builder or V1Builder structures instead
 type Prefix struct {
-	Version  uint64
-	Codec    uint64
-	MhType   uint64
-	MhLength int
+	Version             uint64
+	Codec               uint64
+	MhType              uint64
+	MhLength            int
+	EncryptionAlgorithm uint64
 }
 
 // Sum uses the information in a prefix to perform a multihash.Sum()
 // and return a newly constructed Cid with the resulting multihash.
 func (p Prefix) Sum(data []byte) (Cid, error) {
+	if p.Version == 4 {
+		key, err := multisymmetric.GenerateKey(p.EncryptionAlgorithm)
+		if err != nil {
+			return Undef, err
+		}
+		ct, err := multisymmetric.Encrypt(p.EncryptionAlgorithm, key, data)
+		if err != nil {
+			return Undef, err
+		}
+		hash, err := mh.Sum(ct, p.MhType, p.MhLength)
+		if err != nil {
+			return Undef, err
+		}
+		c := NewCidV1(Raw, hash)
+		return NewPrivateCid(p.Codec, p.EncryptionAlgorithm, key, c), nil
+	}
+
 	hash, err := mh.Sum(data, p.MhType, p.MhLength)
 	if err != nil {
 		return Undef, err
@@ -515,11 +652,14 @@ func (p Prefix) Sum(data []byte) (Cid, error) {
 //
 //     <version><codec><mh-type><mh-length>
 func (p Prefix) Bytes() []byte {
-	buf := make([]byte, 4*binary.MaxVarintLen64)
+	buf := make([]byte, 5*binary.MaxVarintLen64)
 	n := binary.PutUvarint(buf, p.Version)
 	n += binary.PutUvarint(buf[n:], p.Codec)
 	n += binary.PutUvarint(buf[n:], uint64(p.MhType))
 	n += binary.PutUvarint(buf[n:], uint64(p.MhLength))
+	if p.Version == 4 {
+		n += binary.PutUvarint(buf[n:], uint64(p.EncryptionAlgorithm))
+	}
 	return buf[:n]
 }
 
@@ -547,10 +687,17 @@ func PrefixFromBytes(buf []byte) (Prefix, error) {
 		return Prefix{}, err
 	}
 
+	var encAlg uint64
+	if vers == 4 {
+		encAlg, err = binary.ReadUvarint(r)
+		return Prefix{}, err
+	}
+
 	return Prefix{
-		Version:  vers,
-		Codec:    codec,
-		MhType:   mhtype,
-		MhLength: int(mhlen),
+		Version:             vers,
+		Codec:               codec,
+		MhType:              mhtype,
+		MhLength:            int(mhlen),
+		EncryptionAlgorithm: encAlg,
 	}, nil
 }

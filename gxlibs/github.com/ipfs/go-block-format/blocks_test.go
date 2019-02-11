@@ -75,7 +75,7 @@ func TestManualHash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !bytes.Equal(block.Multihash(), hash) {
+	if !bytes.Equal(block.(*BasicBlock).Multihash(), hash) {
 		t.Error("wrong multihash")
 	}
 
@@ -85,7 +85,7 @@ func TestManualHash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !bytes.Equal(block.Multihash(), hash) {
+	if !bytes.Equal(block.(*BasicBlock).Multihash(), hash) {
 		t.Error("wrong multihash")
 	}
 

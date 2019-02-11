@@ -18,7 +18,7 @@ type PinAPI CoreAPI
 func (api *PinAPI) Add(ctx context.Context, p coreiface.Path, opts ...caopts.PinAddOption) error {
 	dagNode, err := api.core().ResolveNode(ctx, p)
 	if err != nil {
-		return fmt.Errorf("pin: %s", err)
+		return fmt.Errorf("pin1: %s", err)
 	}
 
 	settings, err := caopts.PinAddOptions(opts...)
@@ -30,7 +30,7 @@ func (api *PinAPI) Add(ctx context.Context, p coreiface.Path, opts ...caopts.Pin
 
 	err = api.pinning.Pin(ctx, dagNode, settings.Recursive)
 	if err != nil {
-		return fmt.Errorf("pin: %s", err)
+		return fmt.Errorf("pin2: %s", err)
 	}
 
 	return api.pinning.Flush()

@@ -10,9 +10,10 @@ import (
 	cmdenv "github.com/ipsn/go-ipfs/core/commands/cmdenv"
 	coreiface "github.com/ipsn/go-ipfs/core/coreapi/interface"
 	"github.com/ipsn/go-ipfs/core/coreapi/interface/options"
+	"github.com/ipsn/go-ipfs/multisymmetric"
 
-	cmds "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmds"
 	cmdkit "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmdkit"
+	cmds "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmds"
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
 )
 
@@ -125,6 +126,7 @@ const (
 	blockFormatOptionName = "format"
 	mhtypeOptionName      = "mhtype"
 	mhlenOptionName       = "mhlen"
+	cryptoOptionName      = "crypto"
 )
 
 var blockPutCmd = &cmds.Command{
@@ -146,6 +148,7 @@ than 'sha2-256' or format to anything other than 'v0' will result in CIDv1.
 		cmdkit.StringOption(blockFormatOptionName, "f", "cid format for blocks to be created with."),
 		cmdkit.StringOption(mhtypeOptionName, "multihash hash function").WithDefault("sha2-256"),
 		cmdkit.IntOption(mhlenOptionName, "multihash hash length").WithDefault(-1),
+		cmdkit.StringOption(cryptoOptionName, "encryption algorithm").WithDefault("none"),
 	},
 	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
 		api, err := cmdenv.GetApi(env, req)
@@ -178,7 +181,13 @@ than 'sha2-256' or format to anything other than 'v0' will result in CIDv1.
 			}
 		}
 
-		p, err := api.Block().Put(req.Context, file, options.Block.Hash(mhtval, mhlen), options.Block.Format(format))
+		crypto, _ := req.Options[cryptoOptionName].(string)
+		cryptoval, ok := multisymmetric.Names[crypto]
+		if !ok {
+			return fmt.Errorf("unrecognized encryption algorithm: %s", crypto)
+		}
+
+		p, err := api.Block().Put(req.Context, file, options.Block.Hash(mhtval, mhlen), options.Block.Format(format), options.Block.Crypto(cryptoval))
 		if err != nil {
 			return err
 		}

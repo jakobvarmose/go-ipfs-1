@@ -539,3 +539,7 @@ func castCidToBytes(link cid.Cid) ([]byte, error) {
 	}
 	return append([]byte{0}, link.Bytes()...), nil
 }
+
+func (n *Node) Public() (blocks.Block, error) {
+	return n, nil
+}

@@ -10,6 +10,7 @@ import (
 	cid "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-cid"
 	u "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-util"
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
+	"github.com/ipsn/go-ipfs/multisymmetric"
 )
 
 // ErrWrongHash is returned when the Cid of a block is not the expected
@@ -22,6 +23,7 @@ type Block interface {
 	Cid() cid.Cid
 	String() string
 	Loggable() map[string]interface{}
+	Public() (Block, error)
 }
 
 // A BasicBlock is a singular block of data in ipfs. It implements the Block
@@ -40,7 +42,19 @@ func NewBlock(data []byte) *BasicBlock {
 // NewBlockWithCid creates a new block when the hash of the data
 // is already known, this is used to save time in situations where
 // we are able to be confident that the data is correct.
-func NewBlockWithCid(data []byte, c cid.Cid) (*BasicBlock, error) {
+func NewBlockWithCid(data []byte, c cid.Cid) (Block, error) {
+	if c.Version() == 4 {
+		ct, err := multisymmetric.Encrypt(c.EncryptionAlgorithm(), c.EncryptionKey(), data)
+		if err != nil {
+			return nil, err
+		}
+
+		return &CryptoBlock{
+			cid:        c,
+			ciphertext: ct,
+			plaintext:  data,
+		}, nil
+	}
 	if u.Debug {
 		chkc, err := c.Prefix().Sum(data)
 		if err != nil {
@@ -79,4 +93,8 @@ func (b *BasicBlock) Loggable() map[string]interface{} {
 	return map[string]interface{}{
 		"block": b.Cid().String(),
 	}
+}
+
+func (b *BasicBlock) Public() (Block, error) {
+	return b, nil
 }

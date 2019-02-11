@@ -2,14 +2,17 @@ package options
 
 import (
 	"fmt"
+
 	cid "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-cid"
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
+	"github.com/ipsn/go-ipfs/multisymmetric"
 )
 
 type BlockPutSettings struct {
-	Codec    string
-	MhType   uint64
-	MhLength int
+	Codec               string
+	MhType              uint64
+	MhLength            int
+	EncryptionAlgorithm uint64
 }
 
 type BlockRmSettings struct {
@@ -59,10 +62,16 @@ func BlockPutOptions(opts ...BlockPutOption) (*BlockPutSettings, cid.Prefix, err
 		}
 	}
 
+	if options.EncryptionAlgorithm != multisymmetric.None {
+		pref.Version = 4
+	}
+
 	pref.Codec = formatval
 
 	pref.MhType = options.MhType
 	pref.MhLength = options.MhLength
+
+	pref.EncryptionAlgorithm = options.EncryptionAlgorithm
 
 	return options, pref, nil
 }
@@ -101,6 +110,15 @@ func (blockOpts) Hash(mhType uint64, mhLen int) BlockPutOption {
 	return func(settings *BlockPutSettings) error {
 		settings.MhType = mhType
 		settings.MhLength = mhLen
+		return nil
+	}
+}
+
+// Crypto is an option for Block.Put which specifies the encryption algorithm
+// to use when hashing the object.
+func (blockOpts) Crypto(crypto uint64) BlockPutOption {
+	return func(settings *BlockPutSettings) error {
+		settings.EncryptionAlgorithm = crypto
 		return nil
 	}
 }

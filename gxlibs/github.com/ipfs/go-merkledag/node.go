@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	blocks "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-block-format"
 	cid "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-cid"
 	ipld "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipld-format"
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
+	"github.com/ipsn/go-ipfs/multisymmetric"
 )
 
 // Common errors
@@ -25,7 +27,7 @@ type ProtoNode struct {
 	// cache encoded/marshaled value
 	encoded []byte
 
-	cached cid.Cid
+	cached blocks.Block
 
 	// builder specifies cid version and hashing function
 	builder cid.Builder
@@ -45,11 +47,22 @@ var v1CidPrefix = cid.Prefix{
 	Version:  1,
 }
 
+var v4CidPrefix = cid.Prefix{
+	Codec:               cid.DagProtobuf,
+	MhLength:            -1,
+	MhType:              mh.SHA2_256,
+	Version:             4,
+	EncryptionAlgorithm: multisymmetric.AES_CTR_ZERO_IV,
+}
+
 // V0CidPrefix returns a prefix for CIDv0
 func V0CidPrefix() cid.Prefix { return v0CidPrefix }
 
 // V1CidPrefix returns a prefix for CIDv1 with the default settings
 func V1CidPrefix() cid.Prefix { return v1CidPrefix }
+
+// V4CidPrefix returns a prefix for CIDv4 with the default settings
+func V4CidPrefix() cid.Prefix { return v4CidPrefix }
 
 // PrefixForCidVersion returns the Protobuf prefix for a given CID version
 func PrefixForCidVersion(version int) (cid.Prefix, error) {
@@ -58,6 +71,8 @@ func PrefixForCidVersion(version int) (cid.Prefix, error) {
 		return v0CidPrefix, nil
 	case 1:
 		return v1CidPrefix, nil
+	case 4:
+		return v4CidPrefix, nil
 	default:
 		return cid.Prefix{}, fmt.Errorf("unknown CID version: %d", version)
 	}
@@ -79,7 +94,7 @@ func (n *ProtoNode) SetCidBuilder(builder cid.Builder) {
 	} else {
 		n.builder = builder.WithCodec(cid.DagProtobuf)
 		n.encoded = nil
-		n.cached = cid.Undef
+		n.cached = nil
 	}
 }
 
@@ -98,6 +113,7 @@ func NodeWithData(d []byte) *ProtoNode {
 // AddNodeLink adds a link to another node.
 func (n *ProtoNode) AddNodeLink(name string, that ipld.Node) error {
 	n.encoded = nil
+	n.cached = nil
 
 	lnk, err := ipld.MakeLink(that)
 	if err != nil {
@@ -114,6 +130,7 @@ func (n *ProtoNode) AddNodeLink(name string, that ipld.Node) error {
 // AddRawLink adds a copy of a link to this node
 func (n *ProtoNode) AddRawLink(name string, l *ipld.Link) error {
 	n.encoded = nil
+	n.cached = nil
 	n.links = append(n.links, &ipld.Link{
 		Name: name,
 		Size: l.Size,
@@ -126,6 +143,7 @@ func (n *ProtoNode) AddRawLink(name string, l *ipld.Link) error {
 // RemoveNodeLink removes a link on this node by the given name.
 func (n *ProtoNode) RemoveNodeLink(name string) error {
 	n.encoded = nil
+	n.cached = nil
 
 	ref := n.links[:0]
 	found := false
@@ -219,7 +237,7 @@ func (n *ProtoNode) Data() []byte {
 // SetData stores data in this nodes.
 func (n *ProtoNode) SetData(d []byte) {
 	n.encoded = nil
-	n.cached = cid.Undef
+	n.cached = nil
 	n.data = d
 }
 
@@ -306,9 +324,18 @@ func (n *ProtoNode) MarshalJSON() ([]byte, error) {
 // Cid returns the node's Cid, calculated according to its prefix
 // and raw data contents.
 func (n *ProtoNode) Cid() cid.Cid {
-	if n.encoded != nil && n.cached.Defined() {
-		return n.cached
+	if n.cached != nil {
+		return n.cached.Cid()
 	}
+
+	for _, link := range n.links {
+		if link.Cid.Prefix().Version == 4 {
+			//TODO	n.Prefix.Version = 4
+			//TODO	n.Prefix.KeyType = 1
+		}
+	}
+
+	n.encoded = n.RawData()
 
 	c, err := n.builder.Sum(n.RawData())
 	if err != nil {
@@ -316,9 +343,14 @@ func (n *ProtoNode) Cid() cid.Cid {
 		err = fmt.Errorf("invalid CID of length %d: %x: %v", len(n.RawData()), n.RawData(), err)
 		panic(err)
 	}
+	b, err := blocks.NewBlockWithCid(n.RawData(), c)
+	if err != nil {
+		panic(err)
+	}
 
-	n.cached = c
-	return c
+	n.cached = b
+	//fmt.Println(n.cached.Cid(), n.cached.Cid().Public())
+	return n.cached.Cid()
 }
 
 // String prints the node's Cid.
@@ -335,7 +367,7 @@ func (n *ProtoNode) Multihash() mh.Multihash {
 		panic(err)
 	}
 
-	return n.cached.Hash()
+	return n.cached.Cid().Hash()
 }
 
 // Links returns the node links.
@@ -382,4 +414,9 @@ func (n *ProtoNode) Tree(p string, depth int) []string {
 		out = append(out, lnk.Name)
 	}
 	return out
+}
+
+func (n *ProtoNode) Public() (blocks.Block, error) {
+	n.Cid()
+	return n.cached.Public()
 }
